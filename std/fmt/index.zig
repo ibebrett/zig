@@ -777,6 +777,77 @@ fn formatIntCallback(context: *FormatIntBuf, bytes: []const u8) (error{}!void) {
     context.index += bytes.len;
 }
 
+pub fn parseFloat(comptime T: type, buf: []const u8) !T {
+    var neg: bool = false;
+    var start: usize = 0;
+    var prefix_result: T = 0.0;
+
+    if (buf.len == 0) {
+        return T(0);
+    }
+    if (buf[0] == '-') {
+        start += 1;
+        neg = true;
+    }
+    if (buf[0] == '+') {
+        start += 1;
+    }
+    if (buf.len < start) {
+        return T(0);
+    }
+
+    const radix = T(10);
+    var parsed_up_to = buf.len;
+    for (buf[start..]) |c, i| {
+        if (c == '.') {
+          parsed_up_to = start + i;
+          break;
+        }
+        const digit = math.lossyCast(T, try charToDigit(c, radix));
+
+        prefix_result = digit + prefix_result * radix;
+    }
+
+    var suffix_result = T(0.0);
+    const inverse_radix = T(1) / T(10);
+
+    var i = buf.len - 1;
+    while (i > parsed_up_to) {
+        const c = buf[i];
+        const digit = math.lossyCast(T, try charToDigit(c, radix));
+  
+        suffix_result = digit + suffix_result * inverse_radix;
+
+        i -= 1;
+    }
+
+    const result = prefix_result + inverse_radix * suffix_result;
+
+    if (neg) {
+        return T(-1.0) * result;
+    }
+    return result;
+}
+
+fn testEqual(comptime T: type, actual: T, expected: T) !void {
+    if (actual == expected) return;
+
+    std.debug.warn("\n====== expected this output: =========\n");
+    std.debug.warn("{}", expected);
+    std.debug.warn("\n======== instead found this: =========\n");
+    std.debug.warn("{}", actual);
+    std.debug.warn("\n======================================\n");
+    return error.TestFailed;
+}
+
+test "fmt.parseFloat" {
+    try testEqual(f32, (parseFloat(f32, "") catch unreachable), 0.0);
+    try testEqual(f32, (parseFloat(f32, "1.0") catch unreachable), 1.0);
+    try testEqual(f32, (parseFloat(f32, "-1.0") catch unreachable), -1.0);
+    try testEqual(f32, (parseFloat(f32, "-1") catch unreachable), -1.0);
+    try testEqual(f32, (parseFloat(f32, "-1.01") catch unreachable), -1.01);
+}
+
 pub fn parseInt(comptime T: type, buf: []const u8, radix: u8) !T {
     if (!T.is_signed) return parseUnsigned(T, buf, radix);
     if (buf.len == 0) return T(0);
